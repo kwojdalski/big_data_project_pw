@@ -1,0 +1,293 @@
+## Latent Dirichlet Allocation
+
+**Latent Dirichlet Allocation** jest modelem wprowadzonym w **2003** roku przez
+**Davida Blei**, **Andrew Ng** i **Michaela I. Jordana**. Jest to generatywny
+model probabilistyczny opierający się o tzw. **rozkład Dirichleta** i w swojej
+istocie służy do opisujania dokumentu.  **LDA** opiera się na dwóch
+podstawowych założeniach:
+
+* Każdy dokument jest zlepkiem tematów - oznacza to, że każdy dokument może zawierać słowa (w różnej proporcji) przypisane do różnych tematów.
+Przykładowo jeżeli post ze **Stack Exchange** brzmi: "Lubię jeść pomidory i
+lubię głaskać koty" to na podstawie modelu **LDA** można stwierdzić, że tekst w
+**50% traktuje o warzywach i w 50% o zwierzętach**
+* Każdy temat jest zlepkiem słów - można sobie wyobrazić sytuacje, w której mamy dwa tematy - wcześniej wspomniane **zwierzęta** i **warzywa**.
+Najbardziej popularne słowa z tego pierwszego to np. **kot**, **pies**, zaś z
+drugiego **pomidor** i **ogórek**. Warto tu zaznaczyć, że słowa mogą
+przynależeć do obu grup.
+
+**LDA** zawiera algorytm do estymacji obu tych zagadnień jednocześnie, czyli
+zasobu słów przynależących do tematów oraz tematów przynależących do dokumentu.
+Za pomocą implementacji modelu w **ML** w dalszej części rozdziału zostały
+wymodelowane te właśnie dwa problemy.
+
+
+### Model LDA w Spark
+**Latent Dirichlet Allocation** został zaimplementowany w **Spark**'u poprzez
+dwie podstawowe biblioteki:
+
+* **MLlib** - operacje są dokonywane na **RDD** (**Resilent Distributed Dataset**)
+* **ML** - model działa na strukturze DataFrame. Ponadto biblioteka posiada możliwość tworzenia pipeline'ów, które w przejrzysty sposób
+pozwalają na przeprowadzenie procesu budowy modelu
+
+Tak jak zdecydowana większość funkcji - `LDA()` można używać we wszystkich 4 oficjalnie wspieranych językach programowania, to jest w  **Scali**, 
+**Javie**, **Pythonie** (**PySpark**) i **R** (**SparkR** i
+**sparklyr**). W przypadku tego projektu pierwotnie implementacja miała
+nastąpić w **R**, w najnowszym języku wspieranym oficjalnie. Okazało się to być
+jednak bardzo zawodne i ograniczone rozwiązanie. Przykładem jest `ft_stop_words_remover()` 
+w paczce **sparklyr (0.7.0)**. Funkcja wywołuje metodę `StopWordsRemover` z
+biblioteki **ML** w **Scali.**. Służy ona do wyrzucania zbędnych słów (z perspektywy
+text miningu za takie można uznać np. **the**, **i**, **have**) ze ztokenizowanego
+tekstu w kolumnie **DataFrame**.  Implementacja w sparklyr jest o tyle
+ograniczająca, że nie można w niej edytować listy wyrazów, a jedynie użyć
+domyślny zasób w języku angielskim.
+Z między innymi tego powodu ostateczny model został wywołany w Scali, jednak
+logika została oparta o przetwarzanie danych w Spark za pomocą **sparklyr** w
+**R**.
+
+Proces rozpoczął się od załadowania paczek, które zostały ściągnięte z
+repozytorium **Maven**'a.
+
+```scala
+import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.sql.{SQLContext, SparkSession}
+import org.apache.spark.sql._
+import org.apache.spark.sql.functions.{regexp_extract, regexp_replace}
+import org.apache.spark.rdd._
+import org.apache.spark.mllib.linalg.{Vector, Vectors}
+import org.apache.spark.ml.feature.{RegexTokenizer, Tokenizer, StopWordsRemover, CountVectorizer}
+import scala.collection.mutable
+import org.apache.spark.ml.clustering.LDA
+import org.apache.spark.ml.Pipeline
+import scala.util.matching.Regex
+import java.io._
+```
+Następnym krokiem było zainicjowanie sesji w **Sparku** (z możliwie największą
+ilością użytych rdzeni, stąd `local[*]`) oraz załadowanie pliku **XML**
+zawierającego posty. Każda linijka została przerobiona na `String`, a następnie
+całość przekonwertowana na **DataFrame**.
+```scala
+val spark = SparkSession.builder()
+  .appName("SparkSessionTest")
+  .master("local[*]")
+  .getOrCreate()
+
+import spark.implicits._
+val input = spark.read.text("./posts/music_posts.xml").map(s=>s.mkString).toDF()
+```
+O ile wcześniej zostały przytoczone statystyki dla kilku kolumn (np.
+AnswerCount), tak w ramach poniższego kodu skupiono się na Body, czyli
+faktycznej treści postów. Dane, tak jak w przypadku wcześniej użytego **Hive**,
+należało oczyścić za pomocą wyrażeń regularnych.
+
+```scala
+val pattern_ = 
+raw"(?s)[0-9]|0[0-9]+|&amp|&xD|&lt(.*?)&gt| (&lt)|(&gt)|(&quot)|(;p)|(&xA)|(\/p)|(\/li)|(\/ol)|[;,.]".r
+val input_ten_2 = input_ten.withColumn("value2", 
+    regexp_extract(input_ten("value"), "Body=\".*?;(.*?)\"", 1))
+val input_ten_3 = input_ten_2.withColumn("value2", 
+    regexp_replace(input_ten_2("value2"), pattern_.toString()," "))
+val input_ten_4 = input_ten_3.withColumn("value2", 
+    regexp_replace(input_ten_3("value2"), " {2,}"," "))
+```
+Poprzez dokonanie takich przekształceń, czyli wyodrębenienie treści postów
+oraz wyrzucenie zbędnych znaków z **XML**, znaków interpunkcyjnych, spacji i
+liczb, tekst był znacznie bardziej czytelny. Dodatkowo jednak trzeba było go
+ztokenizować, czyli podzielić sentencje na wektor występujących w nich wyrazów.
+Następnie użyć wcześniej wspomnianej funkcji usuwającej nieistotne wyrazy, a
+także przekształcić do formy, którą przyjmuje funkcja `import
+org.apache.spark.ml.clustering.LDA`. By każdy z tych obiektów zadziałał w
+odpowiedni sposób należalo podać wejściową i wyjściową nazwę kolumny, a także
+argumenty opcjonalne, o ile zachodzi taka potrzeba.
+
+```scala
+val tokenizer = new Tokenizer()
+  .setInputCol("value2")
+  .setOutputCol("words")
+val stop_words  = Array("&#xa", "%", "-", "p", ")") ++ StopWordsRemover.
+    loadDefaultStopWords("english")
+    
+val remover = new StopWordsRemover()
+  .setInputCol("words")
+  .setOutputCol("filtered")
+  .setStopWords(stop_words)
+val vectorizer = new CountVectorizer()
+  .setInputCol("filtered")
+  .setOutputCol("features")
+  .setVocabSize(2048)
+val tokenized = tokenizer.transform(input_sample)
+val removed = remover.transform(tokenized)
+val vectorized = vectorizer.fit(removed).transform(removed)
+```
+
+Ostatnim krokiem, było zainicjowanie algorytmu, budującego model. Parametry z
+modelu zostały ustawione tak, by powstały `4` tematy (topic'i). Ponadto liczba
+iteracji została ustawiona na wartość `50`, zaś algorytm optymalizujący na `em`
+(alternatywnie mogła to być metoda `online`). Taka konfiguracja wynikała z
+logiki modelu i została oparta o dokumentację dla funkcji (jej kompaktora
+wersja dostępna jest poprzez wywolanie na modelu metody `explainParams()`).
+
+```scala
+val lda = new org.apache.spark.ml.clustering.LDA()
+  .setK(4)
+  .setMaxIter(50)
+  .setOptimizer("em")
+  .fit(vectorized)
+```
+
+```
+scala> lda.explainParams()
+params: String =
+checkpointInterval: set checkpoint interval (>= 1) or disable checkpoint (-1). 
+E.g. 10 means that the cache will get checkpointed every 10 iterations (default: 10)
+docConcentration: Concentration parameter (commonly named "alpha") for the prior placed on 
+documents' distributions over topics ("theta"). (undefined)
+featuresCol: features column name (default: features)
+k: The number of topics (clusters) to infer. Must be > 1. (default: 10, current: 4)
+keepLastCheckpoint: (For EM optimizer) If using checkpointing, this indicates whether 
+to keep the last checkpoint. If false, then the checkpoint will be deleted. Deleting the
+checkpoint can cause failures if a data partition is lost, so set this bit with care. (default: true)
+learningDecay: (For online optimizer) Learning rate, set as an exponential decay rate. 
+This should be between (0.5, 1.0] to guarantee asymptotic convergence. (default: 0.51)
+learningOffset: (For online optimizer) A (positive) learning parameter that downweights 
+early iterations. Larger values make early iterations count less. (default: 1024.0)
+maxIter: maximum number of iterations (>= 0) (default: 20, current: 50)
+optimizeDocConcentration: (For online optimizer only, currently) Indicates 
+whether the docConcentration (Dirichlet parameter for document-topic distribution) 
+will be optimized during training. (default: true)
+optimizer: Optimizer or inference algorithm used to estimate the LDA model. 
+Supported: online, em (default: online, current: em)
+seed: random seed (default: 1435876747)
+subsamplingRate: (For online optimizer) Fraction of the corpus to be sampled and used in each 
+iteration of mini-batch gradient descent, in range (0, 1]. (default: 0.05)
+topicConcentration: Concentration parameter (commonly named "beta" or "eta") for the 
+prior placed on topic' distributions over terms. (undefined)
+topicDistributionCol: Output column with estimates of the topic mixture distribution for each 
+document (often called "theta" in the literature).  
+Returns a vector of zeros for an empty document. (default: topicDistribution)
+
+```
+
+
+
+
+
+
+Po wywołaniu powyższego kodu został utworzony model, który można zweryfikować
+poprzez funkcję `logLikelihood`, a także `logPerplexity`. Wartość `logLikelihood` jest tym bardziej pożądana dla badacza, im bliżej jest jej do zera. 
+Przydaje się ona szczególnie wtedy, gdy dochodzi do tuningu modelu, to jest próby dobrania optymalnych
+parametrów na testowym zestawie danych. Podobną statystyką jest `logPerplexity` - tutaj też im wartość będzie bliższa, tym model można uznać za lepiej dopasowany.
+Metoda zawsze jednak przyjmuje wartości dodatnie, w odróżnieniu od `logLikelihood`, gdzie mogą być i dodatnie, i ujemne wartości.
+
+```scala
+val ll = lda.logLikelihood(vectorized)
+val lp = lda.logPerplexity(vectorized)
+```
+
+Warto nadmienić, że dane wyjściowe z modelu są nieinterpretowalne dla badacza. metody `topicsMatrix` oraz 
+`describeTopics` zwracają ramkę danych złożoną z wektorów numerycznych (typy `Double` i `Int`).
+By dowiedzieć się jakie wyrazy (a nie indeksy) były najpopularniejsze wśród tematów, można zastosować interfejs 
+DataFrame'ów do udf'ów. W tym celu należy załadować dodatkową funkcję ze Spark SQL oraz zdefiniować funkcję, tak jak poniżej:
+
+```scala
+import org.apache.spark.sql.functions.udf
+val terms_udf = udf{(termIndices: Seq[Int]) => termIndices.map(idx => vocab(idx)) }
+val topics = ldaModel.describeTopics(maxTermsPerTopic = 5).withColumn("terms", terms_udf(col("termIndices")))
+
+```
+
+
+
+
+By móc zastosować model **LDA** w **Spark**'u należy doprowadzić dane do
+postaci, którą sparklyr API jest w stanie przekonwertować do postaci **Spark
+DataFrame**. Nie tylko format danych jest istotny - wymagana jest również
+tokenizacja tabeli z **Hive**, czyli podzielenie dokumentów na wektor słów za
+pomocą funkcji `ft_tokenizer()`.  Następnym krokiem jest wydobycie słownika z
+kolekcji dokumentów (postów). Służy do tego funkcja `ft_count_vectorizer()`,
+która zlicza wystąpienia danego słowa w dokumencie.
+
+
+
+
+```
+
+val data = Array("Five","strings","in","a","file!")
+def printToFile(f: java.io.File)(op: java.io.PrintWriter => Unit) {
+  val p = new java.io.PrintWriter(f)
+  try { op(p) } finally { p.close() }
+}
+
+topics.map(x => x.mkString(",")).coalesce(1).write.option("header", "true").csv("file5.csv")
+```
+
+
+
+
+
+
+
+```{r lda_tokenization, eval=FALSE, include=FALSE}
+k_ <- 4
+
+model <- first_tbl %>%
+  ft_tokenizer("text", "tokens") %>%
+  ft_count_vectorizer("tokens", "features") %>%
+  ml_lda("features", k = k_)
+
+
+voc <- first_tbl %>%
+  ft_tokenizer("text", "tokens") %>%
+  ft_count_vectorizer("tokens", "features", vocabulary.only = T)
+require(forcats)
+most_freq_words <- data.frame(voc = voc, topics = model$topics.matrix) %>%
+  reshape2::melt(id.vars = 'voc') %>%
+  group_by(variable) %>%
+  arrange(desc(value)) %>%
+  top_n(10, value) %>%
+  ungroup()
+  for(i in 1:k_) {
+
+   ( split(most_freq_words,most_freq_words$variable)[[i]] %>%
+    ggplot(aes(x = fct_reorder(voc, value, fun = sum, .desc = F), y = value))+
+    geom_col() + coord_flip() + scale_y_continuous(labels = function(x) {sprintf('%.0f%%',x)})+
+      labs(y= 'word', x = "freq")
+   ) %>% print()
+
+
+
+  }
+
+
+```
+
+`ml_lda()` zwraca rozkład prawdopodobieństwa każdego słowa w słowniku dla
+każdego tematu. Dla danyc
+
+
+```{r model_top_terms_among groups, eval = F}
+library(ggplot2)
+library(dplyr)
+
+ap_top_terms <- ap_topics %>%
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+ap_top_terms %>%
+  mutate(term = reorder(term, beta)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  coord_flip()
+
+library(topicmodels)
+  library(tidytext)
+data("AssociatedPress")
+ap_lda <- LDA(AssociatedPress, k = 2, control = list(seed = 1234))
+ap_lda
+
+ap_topics <- tidy(ap_lda, matrix = "beta")
+ap_topics
+
+```

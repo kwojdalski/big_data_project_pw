@@ -1,0 +1,83 @@
+## Przetwarzanie danych
+
+
+
+
+```{r dataframe_headd, cache= FALSE, echo = FALSE, results="asis", eval = F}
+posts_df_head %<>% mutate(CreationDate = as.POSIXct(CreationDate, format = '%Y-%m-%dT%H:%M:%S'))
+
+p_load(stargazer, purrrlyr, tm)
+
+#xtable(posts_df_head %>% head(5) %>%  dmap_at(c('Body','Tags'),function(x){ html2txt(x) %>% stringr::str_replace_all('[^A-Za-z 0-9]','')}))
+# posts_df_head$Body%<>% sapply(FUN = function(x){ 
+#     if(!is.na(x) && nchar(x)){ html2txt(x) %>% stringr::str_replace_all('[^<>\\/\\\\A-Za-z 0-9]','')}
+#     else return(NA)
+#   }) %>% unlist()
+# View(posts_df_head)
+# posts_df_head$Tags%<>% sapply(FUN = function(x){ 
+#     if(!is.na(x) && nchar(x)){ html2txt(x) %>% stringr::str_replace_all('[^<>\\/\\\\A-Za-z 0-9]','')}
+#     else return(NA)
+#   }) %>% unlist()
+posts_df_head %<>% dmap_at(c('Body','Tags','Title'),function(x){ 
+    if(!is.na(x) && nchar(x)){ html2txt(x) %>% stringr::str_replace_all('[^<>\\/\\\\A-Za-z 0-9]','')}
+    else return(NA)
+  })
+x_table <- xtable(posts_df_head %>% slice(3:8), caption = 'Próbka danych')
+print(x_table, floating = TRUE, floating.environment = "sidewaystable")
+
+
+```
+
+
+
+
+```{r plots, echo = FALSE, eval = F}
+
+# Selecting ---------------------------------------------------------------
+
+# Extracting info
+ggplot(posts_df_head, aes(x = AnswerCount, y = FavouriteCount)) + geom_point() + theme_economist()
+ggplot(posts_df_head, aes(x = hour(CreationDate))) + geom_bar(stat='count') + theme_economist()
+posts_df_head %>% 
+  group_by(hour = hour(CreationDate)) %>% 
+  summarize(mean_views = mean(ViewCount, na.rm =T)) %>% 
+  ggplot(aes(x = hour, y=mean_views)) + geom_bar(stat='identity') + theme_economist()
+
+```
+
+
+
+
+```{r model lda, eval = F}
+
+
+
+k_ <- 4
+model$tokens[[1]]
+model <- 
+  posts_df2 %>%head(50) %>% filter(!is.na(Body)) %>% 
+  ft_tokenizer("Body", "tokens") %>% select(tokens) %>% collect()
+  ft_stop_words_remover('tokens','tokens2') %>% 
+  ft_count_vectorizer("tokens", "features") %>%
+  ml_lda("features", k = k_)
+
+voc <- posts_df2 %>%filter(!is.na(Body)) %>% 
+  ft_tokenizer("Body", "tokens") %>%
+  ft_stop_words_remover('tokens','tokens2') %>% 
+  ft_count_vectorizer("tokens", "features", vocabulary.only = T)
+s
+
+
+
+require(forcats)
+most_freq_words <- data.frame(voc = voc, topics = model$topics.matrix) %>% 
+  reshape2::melt(id.vars = 'voc') %>%
+  group_by(variable) %>% 
+  arrange(desc(value)) %>% 
+  top_n(10, value) %>% 
+  ungroup()
+
+
+
+```
+

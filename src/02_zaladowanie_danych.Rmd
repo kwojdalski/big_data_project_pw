@@ -1,0 +1,252 @@
+## Transport danych do środowiska Big Data
+
+### Dane
+
+Do stworzenia pracy posłużyły dane (w formacie **XML**) ściągniete ze [**Stack
+Exchange**](https://archive.org/details/stackexchange). Jest to serwis, 
+w którym można tworzyć pytania a także odpowiadać na posty innych użytkowników w ramach różnych kategorii. 
+Pomoc innym pozwala w zdobywaniu reputacji, która potem może przekładać się na poszanowanie wśród tej społeczności.
+Ponadto, tematy z wysoką ilością przydzielonych punktów pojawiają się wyżej w rankingu rekomendującym podobne pytania do wyszukiwanego, co powoduje, że użytkownicy z większym prawdopodobieństwem i szybciej znajdują odpowiedź na nurtujący ich problem.
+Serwis jest podzielony tematycznie, a każda ze stron 
+posiada swój własny system do moderowania. W kontekście pracy zostały wykorzystane
+posty z tematu **music.stackexchange.com**, w którym udzielają się muzycy.
+W ściągniętych plikach najistotniejszy (i jedyny wykorzystany) to **Posts.xml**. Choć plik był w formie zbliżonej do **XML**'a, 
+to jednak nie udało się go jednak sparsować poprzez funkcję w jednej z dedykowanych bibliotek (`spark-xml`).
+Struktura pliku została ustalona na podstawie znaczników i była taka, jak poniżej:
+
+* `Id` - Id tematu
+* `ParentId` - odniesienie do szerszego zagadnienia (tematu)
+* `AcceptedAnswerId` - Id zaakceptowanej odpowiedzi innego użytkownika
+* `CreationDate` - data utworzenia tematu w formacie zbliżonym do datetime (dotyczy też kolejnych zmiennych z nazwą *Date)
+* `ViewCount` - ilość wyświetleń
+* `Score` - ilość punktów przyznawanych w serwisie
+* `Title` - tytuł zapytania
+* `Body` - treść tematu, które zwykle zawiera skonkretyzowanie zapytania
+* `LastEditorUserId` - Id użytkownika, który jako ostatni zedytował temat
+* `LastEditDate` - data ostatniej edycji
+* `LastActivityDate` - data ostatniej aktywności w temacie, czyli data ostatniego postu w temacie
+* `Tags` - tagi, poprzez które można wyszukać interesujące zapytania
+* `AnswerCount` - ilość odpowiedzi w temacie
+* `CommentCount` - ilość komentarzy w temacie
+* `FavoriteCount` - ilość polubien tematu, które zwykle oznaczają to, że dany użytkownik serwisu znalazł interesujące odpowiedzi w temacie bądź też po prostu uważa, że zagadnienie jest warte uwagi
+
+### Załadowanie danych do HDFS i Hive
+
+Plik z postami należało najpierw umieścić na klastrze, wysyłając go uprzednio
+z użyciem protokołu **SSH** i poniższej pętli w **bash**'u.
+
+```{bash eval= FALSE, echo = TRUE}
+# Klaster - stworzenie tymczasowego folderu dla danych
+mkdir /tmp/music_datasets
+# Lokalny dysk - przeniesienie danych z folderu na klaster
+DIR=~/Downloads/music_datasets
+for d in $(ls ${DIR}/);
+do
+scp -i ~/Downloads/emr_bigdata_pw.pem ${DIR}/${d} \
+hadoop@ec2-52-15-164-251.us-east-2.compute.amazonaws.com:../../tmp/music_datasets;
+# sciezka z automatu wskazuje na folder z hadoopem, stąd kropki
+#
+done;
+```
+
+
+```{r, fig.cap = "Przesłanie plików poprzez protokół SSH \\label{ssh}"}
+include_graphics('./img/upload_emr.png')
+```
+
+Następny krok stanowiło przeniesienie danych do odpowiedniego folderu i innego
+systemu plików, czyli na **HDFS**.
+
+```bash
+# Stworzenie folderu kw na HDFS
+hadoop fs -mkdir /user/kw/
+# Kopia na HDFS z folderu tymczasowego
+hadoop fs -put /tmp/music_datasets /user/kw/
+```
+
+W celu sprawdzenia, czy dane zostały poprawnie przeniesione, użyte został **Hue**,
+czyli graficzny interfejs do ekosystemu projektów Big Data.
+
+```bash
+http://52.15.164.251:8888/
+kw / Kw8307@!
+```
+
+
+
+
+Kolejnym etapem było stworzenie tabeli w **Hive**. 
+Celem takiego zabiegu było ustrukturyzowanie danych, by potem można było je
+wydajnie eksplorować. Do tego momentu bowiem struktura
+pliku załadowanego do **HDFS** była kolejnymi linijkami pliku **XML**, bez struktury z typami.
+Każda liczba, czy data i tak była traktowana jako `String`.
+
+```sql
+hive # uruchomienie konsoli Hive
+-- Stworzenie pustej tabeli do przechowywania linii pliku XML
+DROP TABLE temp_posts;
+CREATE TABLE temp_posts (Text string);
+LOAD DATA INPATH '/user/kw/music_datasets/Posts.xml' into TABLE temp_posts;
+
+-- Stworzenie pustej tabeli wraz z typami spodziewanych danych
+DROP TABLE POSTS;
+CREATE EXTERNAL TABLE  posts
+(
+  Id int,
+  ParentId int,
+  AcceptedAnswerId int,
+  CreationDate timestamp,
+  ViewCount int,
+  Score int,
+  Title string,
+  Body string,
+  LastEditorUserId string,
+  LastEditDate timestamp,
+  LastActivityDate timestamp,
+  Tags string,
+  AnswerCount int,
+  CommentCount int,
+  FavouriteCount int
+)
+
+TBLPROPERTIES("skip.header.line.count"="2");
+
+insert overwrite table posts
+SELECT
+regexp_extract(Text, 'Id="([0-9]+)"',1) Id,
+regexp_extract(Text, 'ParentId="([0-9]+)"',1) ParentId,
+regexp_extract(Text, 'AcceptedAnswerId="([0-9]+)"',1) AcceptedAnswerId,
+cast(regexp_replace(regexp_extract(Text, 'CreationDate="(.*?)"',1), '[A-Z]',' ')
+  as TIMESTAMP) CreationDate,
+regexp_extract(Text, 'ViewCount="([0-9]+)"',1) ViewCount,
+regexp_extract(Text, 'Score="([0-9]+)"',1) Score,
+regexp_replace(regexp_extract(Text, 'Title="(.*?)"',1),'[^&;,.<>\\/\\\\A-Za-z 0-9]','') Title,
+regexp_replace(regexp_extract(Text, 'Body="(.*?)"',1),'[^&;,.<>\\/\\\\A-Za-z 0-9]','') Body,
+regexp_extract(Text, 'LastEditorUserId="([0-9]+)"',1) LastEditorUserId,
+cast(regexp_replace(regexp_extract(Text, 'LastEditDate="(.*?)"',1), '[A-Z]', ' ')
+  as TIMESTAMP) LastEditDate,
+cast(regexp_replace(regexp_extract(Text, 'LastActivityDate="(.*?)"',1), '[A-Z]', ' ')
+  as TIMESTAMP) LastActivityDate,
+regexp_replace(regexp_extract(Text, 'Tags="(.*?)"',1),'[^&;,.<>\\/\\\\A-Za-z 0-9]','') Tags,
+regexp_extract(Text, 'AnswerCount="([0-9]+)"',1) AnswerCount,
+regexp_extract(Text, 'CommentCount="([0-9]+)"',1) CommentCount,
+regexp_extract(Text, 'FavoriteCount="([0-9]+)"',1) FavouriteCount
+from temp_posts;
+
+```
+
+Poniżej screenshot obrazujący podgląd danych w **Hive** za pomocą **Hue**.
+
+```{r, fig.cap = "Interfejs Apache Hue \\label{hue}"}
+include_graphics('./img/hue.png')
+```
+
+## Analiza danych w Hive
+
+W tej części zobrazowano wybrane możliwości **Hive** w postaci kwerend. Każda z nich jest de facto 
+zadaniem - tekst z **HQL** zostaje przekształcony na **job** w **MapReduce**. Poniżej zostało 
+napisane zapytanie, które podlicza posty z jakimś wynikiem (`score` inny niż `NULL`) i agreguje dane po godzinach.
+
+```sql
+SELECT hour(creationdate) AS hour,
+       count(score) AS COUNT
+FROM posts
+WHERE score IS NOT NULL
+GROUP BY hour(creationdate);
+
+```
+```{r, fig.cap = "Rozkład postów w ciągu dnia \\label{hive}"}
+include_graphics('./img/hive.png')
+```
+Z powyższego wykresu, można wywnioskować, że chociaż **Stack Exchange** jest
+serwisem globalnym, to jednak zdecydowana większość użytkowników pisze posty w
+godzinach popołudniowych czasu **UTC**.
+
+Następne zapytanie **HQL** związane było z brakami w danych. Po wczesnej
+inspekcji części danych w **XML** można było stwierdzić, że występuje sporo
+wartości `NULL` bądź pustych danych typu `String`. By sprawdzić skalę zjawiska zostało
+utworzone poniższe zapytanie.
+```sql
+SELECT concat('Rows: ', cast(count(*) AS String)),
+       concat('Nulls in viewcount: ', cast(cast((1.0 -count(viewcount)/count(*))
+          * 100.0 AS decimal(4,1)) AS string), '%'),
+       concat('Nulls in creationdate: ', cast(cast((1.0 -count(creationdate)/count(*))
+          * 100.0 AS decimal(4,1)) AS string), '%'),
+       concat('Zero length title: ',cast(sum(if(length(title)>0, 0,1))/count(*)
+          * 100.0 as DECIMAL(4,1)), '%'),
+       concat('Zero length body: ',cast(sum(if(length(body) >0, 0,1))/count(*)
+          * 100.0 as DECIMAL(4,1)), '%'),
+       concat('Zero length tags: ',cast(sum(if(length(tags) >0, 0,1))/count(*)
+          * 100.0 as DECIMAL(4,1)), '%')
+
+
+FROM posts;
+
+```
+
+
+Na jego podstawie zostało stwierdzone, że wśród **37652** wierszy:
+
+* W **73.6%** przypadków (wierszy) brakowało wartości liczbowej w kolumnie `ViewCount`
+* Timestampy dla wykreowanego tematu pojawiały się zawsze (**0%** `NULL`'i)
+* Tematu posta brakowało w **73.6%**
+* Treść posta występowała zawsze
+* Tagów brakowało w **73.6%**
+
+Należy zaznaczyć, że była to wstępna analiza - przyczyna występowania braku
+wartości niekoniecznie jest determinowana błędami w back-end **Stack
+Exchange**, a raczej specyfiką zapisu nowych rekordów do bazy (wystawionego
+pliku **XML**).
+
+Kolejne zapytanie będzie służyło do policzenia słów w treści postów. W tym celu
+zostanie użyty `LATERAL VIEW` z funkcją `EXPLODE()`, który pozwala na analizę
+kolumny wektorów. Taka struktura danych jest użytecznym rozwiązaniem
+pomocnym w redukcji ilości wierszy i/lub kolumn. W przypadku z projektu
+jednak do zliczenia słów wymagana jest długa tablica (**long table**), gdzie
+każde słowo z każdego posta będzie reprezentowane przez jeden wiersz. Dodatkowo
+treść postów została oczyszczona ze zbędnych znaków, które zaburzały analizę.
+
+
+```sql
+SELECT lower(word) word ,
+       count(word) as count
+FROM posts
+LATERAL VIEW explode(
+split(
+  regexp_replace(
+  regexp_replace(BODY, 
+  '[0-9]|0[0-9]+|&amp|&xD|&lt(.*?)&gt|(&lt)|(&gt)|(&quot)|(;p)|(&xA)|(\/p)|(\/li)|(/\ol)|[;,.]',
+  ' '),
+  ' {2,}',' '),
+  ' +|\/')) visitor AS word
+WHERE length(word)>0
+GROUP BY lower(word)
+ORDER BY count desc
+```
+
+
+Z rezultatu zapytania wyszło, że zdecydowanie najpopularniejszym słowem jest
+**the** (**331** tys. wystąpień), następnie **a** (**185** tys.), **to**
+(**178** tys.), **and** (**133** tys.). Warto nadmienić, że z racji wyboru
+zbioru danych wiele słów jest jednoliterowa (nuty zapisuje się jako pojedyncze
+litery). Przykładowo najpopularniejszą występującą nutą jest **C** (**19** tys.
+wystąpień), poza **A**, które pojawia się wielokrotnie częściej, jednak w języku
+angielskim jest też przedimkiem. W części dotyczącej modelu
+wyszczególnione najpopularniejsze wyrazy, jak i wiele innych, należalo wyrzucić
+z analizy. Było to determinowane ich neutralnością - przykładowo słowo **the**
+można przypisać, co do zasady, do jakiegokolwiek tematu.
+
+
+Po napisaniu powyższego kodu **HQL** należało przejść do głównej części
+projektu, czyli modelu w **Spark**'u.
+
+Logowanie do wcześniej zainstalowanego **RStudio Server**'a
+odbywa sie poprzez adres **http://18.220.255.40:8787/ ** . Po załadowaniu i
+zainstalowaniu bibliotek (paczek) do **R** (zostały wylistowane we wcześniejszej części
+pracy), połączenie ze **Sparkiem** (parametr master, czyli url klastra
+ustawiony na `yarn-client`) wskazało, że faktycznie tabela z użyciem **Hive**
+została utworzona.
+
+```{r, fig.cap = "Interfejs RStudio Server'a \\label{rstudio_srv}"}
+include_graphics('./img/rstudio_server.png')
+```

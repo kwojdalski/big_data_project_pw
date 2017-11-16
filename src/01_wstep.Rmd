@@ -1,0 +1,249 @@
+# Wstęp
+
+W ostatnich latach narzędzia **Big Data** rosną na popularności. Czynnikiem
+determinującym taki stan rzeczy jest przede wszystkim wzrost wolumenu danych,
+zarówno na poziomie makro (danych w ogóle), ale też mikro, na poziomie
+przedsiębiorstwa, co związane jest z tzw. digitalizacją. Zjawisko przyrostu
+cyfrowej informacji sprawia, że w firmach pojawia się problem jej składowania,
+przetwarzania, wyciągania wniosków biznesowych, czy tworzenia produktu w
+oparciu o nią. Paradygmat **MapReduce**, kluczowy z perspektywy **Big Data** nie jest nową koncepcją, jednak dopiero
+od około **15** lat projekty, które adresowałyby opisane powyżej wyzwania są
+prężnie rozwijane, przy czym w ostatnich **10** latach znalazły zastosowanie
+komercyjne. W niniejszym projekcie, zrealizowanym w ramach studiów **Big Data**
+na **Wydziale Elektroniki i Technik Informacyjnych Politechniki Warszawskiej**,
+została omówiona implementacja narzędzi służących do interakcji z dużymi bazami
+danych. Wykorzystano w tym celu przede wszystkim **Apache Spark**.
+Finalnym celem było zbudowanie modelu **LDA** na podstawie danych z portalu **Stack Exchange**, 
+który byłby w stanie wyodrębnić tematy i kluczowe słowa w nich występujące.
+
+Konstrukcja pracy opiera się o opis kolejnych kroków, które posłużyły do
+otrzymania finalnych wyników. W pierwszym rozdziale przedstawiono użyte
+narzędzia i ich krótką charakterystykę. Zawarto nie tylko sekcje o
+oprogramowaniu stricte **Big Data**, ale też o innych elementach, takich jak
+np. **RStudio Server**. W drugiej części autor skupił się na przedstawieniu
+etapów analizy, czyli na generalnym procesie budowy
+rozwiązania opartego o inżynierię danych i data science. Rozpoczyna się od
+zebrania surowych danych, czyli plików zawierających informacje ze **Stack
+Exchange**. Następnie przetworzenia, co oznacza doprowadzenie zbioru z
+półustrukturyzowanych plików znacznikowych (**XML**) do postaci
+ustrukturyzowanej w formie tabel w **Apache Hive**. Trzecim krokiem była
+eksploracja danych, czyli sprawdzenie, co dokładnie zawierają analizowane
+posty. W kontekście modelowania bardzo ważnym krokiem jest także czyszczenie
+używanego zbioru, m.in. pod kątem błędnych zapisów, wartości odstających (tzw.
+outlierów). Gdy dane zostały usystematyzowane, oczyszczone i wiarygodne,
+przeprowadzono proces modelowania. Użyta metoda text miningowa (**Latent
+Dirichlet Allocation**) posłużyła do przypisania poszczególnych postów do
+tematów, a także słów do tematów. Ostatnim krokiem, który znajduje się w rozdziale drugim to komunikacja
+wyników w formie wizualizacji, tabel, a także wnioskowania autora.
+
+Trzeci rozdział stanowi podsumowanie oraz rozważania na temat potencjalnych
+kierunków, możliwości rozwinięcia projektu w przyszłości.
+Autor poruszył także wybrane aspekty, ograniczenia i problemy, jakie
+napotkał w trakcie tworzenia pracy.
+
+
+# Narzędzia użyte w pracy
+
+Głównym wykorzystanym narzędziem **Big Data** jest **Apache Spark**,
+wymagającym instalacji **Scali** (a tym samym **JVM**). Do analizy danych wykorzystano
+ponadto **Apache Hive**, język **R** wraz z **IDE RStudio Server**. 
+Poza narzędziami stricte **Big Data**, w pracy do prezentacji danych użyto **RMarkdown**, substytut **Jupyter
+Notebooks** znanego z **Python**'a, oraz innych paczek do przetwarzania i
+wizualizacji danych.
+
+Poniżej została przedstawiona krótka charakterystyka tego, co zostało użyte w pracy. 
+Należy dodać, że nie są to oczywiście wszystkie możliwości, jakie posiadają poniższe narzędzia, 
+a jedynie ich mały wycinek.
+
+## Apache Spark
+**Apache Spark** to silnik do przetwarzania dużych zbiorów danych. Jego podstawowy 
+atut w stosunku do głównej (ale nie jedynej) alternatywy, **Apache Hadoop**, to szybkość -
+potrafi wykonać to samo zadanie (tzw. **job**) nawet w **100**x mniejszym czasie (np. w przypadku
+ algorytmów iteracyjnych).
+Powód, dla którego **Spark** jest aż tak wydajnym narzędziem, wynika z jego
+architektury. Zapewnia on przetwarzanie w pamięci (**in-memory**), redukując
+ilość czasochłonnych operacji typu **read/write**. **Hadoop** natomiast zawiera komponenty
+**HDFS (Hadoop Distributed File System)** oraz **MapReduce**,
+które działają w oparciu o zapis danych na fizycznych dyskach. 
+
+**Spark** stanowi ponadto zdecydowanie bardziej przyjazne użytkownikowi środowisko. Nie ogranicza 
+interaktywnej eksploracji danych, wykorzystywania cząstkowych wyników (bez konieczności wcześniejszego ich zapisu i odczytu)
+Narzędzie zostało napisane w **Scali**, ale jest ono również dostępne w
+**Javie**, **Pythonie** (**PySpark**) i **R** (**SparkR**, **sparklyr**). 
+**Apache Spark** jako projekt to nie tylko silnik, ale też **SQL**, w którym można pisać kwerendy na rozproszonych ramkach danych (**DataFrame**'ach), biblioteki do uczenia maszynowego (**ML/MLLib**) oraz **GraphX** do analizy grafów. 
+Tego typu integracja pozwala na tworzenie produktów, np. systemów rekomendacyjnych,
+W przypadku uczenia maszynowego, które zostało wykorzystane w ramach projektu interesującym atrybutem są 
+**pipeline**'y, które w łatwy sposób pozwalają od zera zbudować pełnoprawny model oparty o machine learning.
+
+
+## Apache Hive
+
+**Apache Hive** to narzędzie służące do analizy i wydobywania danych z użyciem
+paradygmatu **MapReduce**. W swojej istocie podobne jest do języka zapytań
+**SQL** (używa **HiveQL**). Omawiany software został zaprojektowany w
+**Facebook**'u z myślą o pracownikach, którzy chcieliby w łatwy sposób uzyskać
+interesujące dane, a niekoniecznie są inżynierami. Dzięki integracji z
+ekosystemem **Apache Hadoop**, ale również ze **Sparkiem**, **Hive** zapewnia taki
+poziom abstrakcji, który pozwala w prosty sposób pisania kwerend, bez
+konieczności pisania dodatkowego kodu w **Javie**. Każde zapytanie
+przekształcane jest w zadanie **MapReduce** bądź **Apache Spark**. Z racji
+**fault tolerance**, **Hive** szczególnie dobrze nadaje się do długich
+procesów, gdzie zadanie zostanie zakończone nawet, gdy pojawi się np. błędny
+odczyt. Alternatywnym rozwiązaniem jest stworzona przez **Clouderę Impala**.
+
+## Apache Hue
+
+**Hue** (**Hadoop User Experience**) to webowy interface, który agreguje
+narzędzia z ekosystemu hadoopowego. Służy do przeprowadzania analizy danych a
+także egzekucji zadań z poziomu przeglądarki, co stanowi alternatywę dla komend
+w terminalu. W obecnej wersji jest zintegrowany z bazami danych (m.in.
+**Hive**, **Impala**, **MySQL**, **PostgreSQL**, **Oracle**), umożliwia
+korzystanie z notebooków w **Pythonie**.
+
+## Apache YARN
+
+**Apache Hadoop YARN** (**Yet Another Resource Negotiator**) służy do
+zarządzania klastrem - jego podstawowe funkcje to przydzielanie zasobów, 
+monitorowanie zadań i harmonogramowanie. W kontekście pracy **YARN** jest o tyle istotny, że 
+za jego pomoca można w prosty sposób łączyć się z danymi w **Hive** z poziomu sesji w **Apache Spark**, 
+a także w razie problemów zarządzać istniejącymi procesami.
+
+## R i RStudio
+
+**R** jest wysokopoziomowym językiem programowania służącym głównie do pracy z danymi. W ostatnich latach
+jest on niezwykle popularny wśród statystyków, data scientistów i analityków.
+Jego ewidentnym plusem jest jego ekspresywność i elastyczność, przez co prototypowanie jest wielokrotnie szybsze niż
+np. w **Javie**. Ponadto, z racji bazy użytkowników i ich specyfiki, implementacji najnowszych metod i modeli statystycznych 
+pojawia się w **R** (obok **Python**'a) zwykle dużo szybciej niż w innych językach programowania.
+R posiada system bibliotek (paczek) - najpopularniejszy to **R CRAN** (**MRAN**) - dzięki którym można rozszerzyć możliwości podstawowej 
+wersji o dodatkowe funkcjonalności, w tym także te wykorzystujące paradygmaty Big Data.
+Społeczność **R** stale się powiększa, co powoduje, że często zdarza się, że dany problem został rozwiązany (zaimplementowany) przynajmniej
+na kilka sposobów. Tak jest też ze **Sparkiem** - w tej chwili
+połączenie silnika **R** z silnikiem może się odbywać za pomocą dwóch głównych paczek:
+
+* **SparkR** - oficjalnie wspieranej przez autorów oryginalnego projektu **Apache Spark**. 
+**SparkR** jest konsystentny z analogicznymi pakietami dla **Scali** i
+**Python**'a, poprzez podobne funkcje i ich nazewnictwo. Istotnym
+plusem jest możliwość pisania własnych funkcji, a także większa elastyczność, jeżeli chodzi o strukturę danych, z którą można pracować.
+* **sparklyr** - paczka stworzona przez **RStudio Inc.** Sprawdza się lepiej w przypadku użytkowników pracujących wcześniej w **R**.
+Jest spójny z tym, co znane jest z innych popularnych pakietów, takich jak np. **dplyr**, **plyr**, **purrr**. 
+Ze względu na ten właśnie fakt projekt będzie finalnie wykorzystywał pakiet **sparklyr**.
+
+## Elastic Map Reduce
+
+Do obliczeń został wykorzystany serwis **Amazon EMR**, dostępny na **Amazon Web Services (AWS)**. 
+Jest to rozwiązanie oparte o instancje **Amazon EC2**. Pozwala na wykorzystanie
+zdecydowanej większości znaczących projektów **Apache** stworzonych pod kątem **Big
+Data**. Nadaje się do niemal każdego przypadku, który wymaga infrastruktury do dużych zbiorów danych, np. web indexing, ETL, uczenia maszynowego, 
+systemów finansowych, prac naukowych wymagających większej mocy obliczeniowej.
+
+W ramach tego konkretnego projektu na klastrze zostały zainstalowane następujące
+narzędzia:
+
+* Hadoop 2.7.3
+* Hue 3.12.0
+* Spark 2.2.0
+* Hive 2.3.0
+* Zeppelin 0.7.2
+* R 3.4.0
+* RStudio Server 1.0.153
+* Scala 2.11.8
+
+# Proces budowy rozwiązania Big Data
+
+W tym rozdziale został omówiony proces budowania rozwiązania - od konfiguracji klastra **Amazon EMR**, 
+przez załadowanie danych, ich wyczyszczenie, doprowadzenie do ustrukturyzowanego typu, po budowę modelu 
+text miningowego. 
+
+## Konfiguracja Amazon Elastic Map Reduce
+
+Klaster **Amazon EMR** wymagał następującej konfiguracji:
+
+* Dobór narzędzi - tych wyszczególnionych w sekcji **Elastic Map Reduce**
+* Wielkości klastra - użyto **1x master node m4.large**, **2x slave node m4.large**)
+* Zabezpieczeń - komunikacja poprzez protokół **SSH**. Należało odblokować porty oraz dodać adres IP lokalnego komputera, 
+który posłużył do łączenia się z klastrem
+
+W znaczącej części konfiguracja została dokonana poprzez połączenie za pomocą 
+dedykowanego narzędzia konsolowego. Jest ono szczególnie użyteczne, gdy występuje 
+potrzeba zreplikowania klastra. W przypadku tego projektu klaster był tworzony 
+trzykrotnie. Od uruchomienia poniższej komendy do instalacji całego oprogramowania, 
+włącznie z tymi spoza domyślnego katalogu aplikacji **EMR** minęło około **40-50** minut. 
+Niestety, na ten moment **Amazon** nie oferuje prostego rozwiązania typu black box, które tworzyłoby 
+obrazy każdej z instancji, a następnie dystrybuowałoby je po węzłach. Proces przygotowania środowiska można 
+mocno usprawnić poprzez napisanie odpowiednich skryptów w **bash**'u. W przypadku projektu 
+jednak ten proces jednak podzielony na kroki, by kilkukrotnie przećwiczyć kolejne operacje w 
+środowisku **Big Data**.
+
+```bash
+aws emr create-cluster --termination-protected --applications Name=Hadoop 
+Name=Hive Name=Pig Name=Hue Name=Zeppelin Name=Spark 
+Name=HCatalog --ec2-attributes 
+'{"KeyName":"emr_bigdata_pw","InstanceProfile":"EMR_EC2_DefaultRole",
+"SubnetId":"subnet-0b368a46","EmrManagedSlaveSecurityGroup":"sg-9f38e5f7",
+"EmrManagedMasterSecurityGroup":"sg-de3ee3b6"}' --release-label 
+emr-5.8.0 --log-uri 's3n://aws-logs-373664525226-us-east-2/elasticmapreduce/' 
+--instance-groups '[{"InstanceCount":1,
+"EbsConfiguration":{"EbsBlockDeviceConfigs":
+[{"VolumeSpecification":{"SizeInGB":32,"VolumeType":"gp2"},
+"VolumesPerInstance":1}]},"InstanceGroupType":"CORE",
+"InstanceType":"m4.large","Name":"Core - 2"},{"InstanceCount":1,
+"EbsConfiguration":{"EbsBlockDeviceConfigs"
+:[{"VolumeSpecification":{"SizeInGB":32,"VolumeType":"gp2"},"VolumesPerInstance":1}]},
+"InstanceGroupType":"MASTER","InstanceType":"m4.large","Name":"Master - 1"}]' 
+--configurations '[{"Classification":"hive-site","Properties":
+{"hive.metastore.client.factory.class":
+"com.amazonaws.glue.catalog.metastore.AWSGlueDataCatalogHiveClientFactory"},
+"Configurations":[]},{"Classification":"spark-hive-site",
+"Properties":{"hive.metastore.client.factory.class":
+"com.amazonaws.glue.catalog.metastore.AWSGlueDataCatalogHiveClientFactory"},
+"Configurations":[]}]' --auto-scaling-role EMR_AutoScaling_DefaultRole 
+--ebs-root-volume-size 10 --service-role EMR_DefaultRole 
+--security-configuration 'Security_big_data' --enable-debugging 
+--name 'My cluster' --scale-down-behavior 
+TERMINATE_AT_INSTANCE_HOUR --region us-east-2
+
+
+```
+
+
+
+## Podłączenie do klastra
+
+Podłączenie do klastra nastąpiło poprzez nawiązanie połączenia za pomocą
+protokołu **SSH**. Poniżej znajduje się przykładowy kod, który uruchamia to połączenie. 
+Istotny jest parametr `-i`, który specyfikuje lokalizację klucza do uwierzytelniania 
+połączenia. Klucz ten został wytworzony w serwisie **Amazon**'a, po czym ściągniety 
+na lokalny dysk. 
+
+```bash
+ssh -i ~/Downloads/emr_bigdata_pw.pem hadoop@ec2-52-15-164-251.us-east-2.compute.amazonaws.com
+```
+```{r, fig.cap = "Konsola Elastic Map Reduce \\label{emr}"}
+include_graphics("img/emr.png")
+```
+
+
+Następnym krokiem była aktualizacja domyślnego systemu operacyjnego , na którym
+działa **EMR**. Odbyło się to poprzez system `yum`, służący do zarządzania pakietami. 
+Ponadto należało zainstalować bibliotekę, która wymagana jest do działania biblioteki `devtools`
+i **RStudio Server**'a w ogóle. Ostatnie linie kodu stanowią komendy, które ściągały (`wget`), instalowały 
+(`yum install`), a następnie dodawały użytkownika w systemie operacyjnym (`useradd`) i (`passwd`).
+Wszystkie operacje należało uruchamiać z użyciem `sudo` (super użytkownika z permisją m.in. do instalacji).
+Ponadto w systemie plików **HDFS** dodano folder, do którego trafiały 
+nieobrobione dane - z liberalnymi uprawnieniami `-chmod 777`.
+
+```bash
+sudo yum update
+sudo yum install libcurl-devel openssl-devel 
+sudo yum install R
+wget https://download2.rstudio.org/rstudio-server-rhel-1.0.153-x86_64.rpm
+sudo yum install --nogpgcheck rstudio-server-rhel-1.0.153-x86_64.rpm
+
+sudo useradd -m kw
+sudo passwd kw # Hasło
+
+# Create new directory in hdfs
+hadoop fs -mkdir /user/kw
+hadoop fs -chmod 777 /user/kw
+```

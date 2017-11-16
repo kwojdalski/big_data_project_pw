@@ -1,0 +1,61 @@
+---
+title: "Analiza postów z użyciem LDA i wybranych narzędzi Big Data"
+author: "Krzysztof Wojdalski"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    fig_caption: yes
+    keep_tex: yes
+header-includes:
+- \usepackage[utf8]{inputenc}
+- \usepackage{rotating}
+- \pagenumbering{gobble}
+- \renewcommand{\listfigurename}{Spis rysunków}
+- \usepackage{float}
+nocite: |
+  @db, @tmwr,  @ldamllib,  @lda, @blei, @ng, @ls, @amz, @rs, @spr, @sc
+editor_options:
+  chunk_output_type: console
+  latex_engine: xelatex
+bibliography: src/bibliography.bib
+---
+
+\newpage
+\renewcommand{\contentsname}{Spis treści}
+\setcounter{tocdepth}{3}
+\tableofcontents
+
+```{r setup, cache = FALSE, echo = FALSE, message = FALSE, warning = FALSE}
+
+require(pacman)
+p_load(purrr, plyr, dplyr, sparklyr, dplyr, sparkxml, tidyr, magrittr, ggplot2, ggthemes, xtable, knitr, rmarkdown)
+knitr::opts_knit$set(root.dir = getwd())
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, 
+                      error = FALSE, message = FALSE, dev = "cairo_pdf",
+                      fig.pos = 'H')
+# Run as admin!!!!
+# config <- spark_config()
+# config$sparklyr.gateway.port = 10000
+#sc  <-  spark_connect(master = "local", spark_home = spark_home_dir(version = "2.1.0"))
+opts_chunk$set(tidy.opts = list(width.cutoff = 80),tidy = FALSE)
+opts_chunk$set(out.width = '100%')
+```
+
+
+\newpage
+\pagenumbering{arabic}
+
+
+```{r wstep, child = 'src/01_wstep.Rmd'}
+```
+
+
+```{r zaladowanie_danych, child = 'src/02_zaladowanie_danych.Rmd'}
+```
+
+```{r model_lda, child = 'src/03_model_lda_sparklyr.Rmd'}
+```
+
+
+```{r model_lda, child = 'src/04_referencje.Rmd'}
+```

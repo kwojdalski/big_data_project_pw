@@ -1,0 +1,69 @@
+# Konkluzje
+
+
+## Dyskusja o problemach podczas projektu
+
+Podczas tworzenia pracy autor borykał się z problemami natury technicznej, wynikających głównie z dynamiki 
+projektu **Apache Spark**. Początkowo model miał być 
+implementowany ściśle w **R**. Nie było to jednak optymalne rozwiązanie w kontekście użytego algorytmu. 
+Dopiero obecna wersja biblioteki **sparklyr** jest w stanie zczytywać dane tekstowe do postaci `DataFrame` czy usuwać stop words za pomocą jednej funkcji. Wcześniej było to nietrywialne zadanie. 
+
+  Później autor przestawił się na **Scalę**, implementacja znajduje się w załącznikach - plusem 
+takiego rozwiązania było bardziej rozbudowane i konsystentne **API**. **sparklyr**, jak i alternatywa - **SparkR**, jest 
+zdecydowanie mniej dojrzałe. Stąd część funkcjonalności należy zaimplementować samodzielnie (np. poprzez interfejs `invoke`), a w niektórych z nich pojawiają się błędy.
+Użycie **Scali** również było niebanalne, bo choć finalnie zakończyło się sukcesem (model działa), to 
+jednak nie został wytworzony jednolity proces (od stworzenia klastra przez współpracę z **Hive** 
+do zbudowania, interpretacji i wizualizacji modelu). 
+  Dopiero w trzecim kroku nastąpiła pomyślna próba sprowadzenia całego procesu do **R** i **RStudio Servera**, z użyciem **sparklyr 0.7.0**. 
+  Kolejnym ograniczeniem było szukanie dokumentacji do 
+modelu **LDA**. **Spark** oferuje relatywnie ubogi zasób informacji w porównaniu do np. paczek w **R** służących do tego samego modelu i przetwarzania danych, tyle że lokalnie. Z tej właśnie przyczyny występowały trudności, by ustalić co oznaczają dane parametry, bądź jak działa wykorzystany algorytm. 
+Chwilami problematyczny był też klaster, który autor konfigurował 
+kilkukrotnie - z perspektywy czasu lepszym rozwiązaniem mogłoby się okazać wykorzystanie **docker**'a.
+
+
+
+## Podsumowanie
+
+W projekcie został poruszany temat inżynierii danych. Jej celem było 
+przetwarzanie danych oraz pomyślna implementacja modelu text miningowego w
+rozproszonym środowisku obliczeniowym. To założenie zostało
+zrealizowane. Użyto infrastruktury chmurowej **Amazon Elastic Map Reduce**,
+na który zostały wrzucone dane o postach z serwisu **Stack Exchange**.
+Ponadto dokonano ich eksploracji za pomocą kwerend **HQL**, które
+każde zapytanie przetwarzają na zadanie na klastrze. Końcowym
+elementem były zadania w **Sparku**, których rezultatem miał być model
+**Latent Dirichlet Allocation**. Po dokonaniu odpowiednich przeliczeń,
+został on zinterpretowany za pomocą języka **R**.
+
+## Potencjalne dalsze kierunki rozwoju podobnych projektów
+
+W przyszłości podobny projekt mógłby być rozwijany przynajmniej
+w kilku kierunkach. Po pierwsze - pod kątem większej ilości danych.
+Choć użyte narzędzia służyły do dużych zbiorów danych, to
+jednak pierwotny plik miał jedynie nieco powyżej **35 mb**. Zaimplementowany model
+**LDA** miałby z pewnością większą
+wartość, gdyby ramka danych (**DataFrame**) w **Sparku** była
+obszerniejsza. Kolejna kwestia to sam model - ten został stworzony
+bardziej pod kątem inżynierii danych aniżeli data science. Celem
+było pokazanie, że faktycznie model, o którym mowa działa i jest w
+stanie wygenerować relatywnie sensowne wyniki. Jego tuning jednak został jedynie minimalnie
+poruszony w pracy. Trzeci aspekt to stworzenie gotowego produktu 
+(np. w formie pliku **.jar**, który umieszcza się na klastrze, bez problematycznej konfiguracji), który
+mógłby zostać zaimplementowany w biznesie. Projekt opierał się o
+założenie, że dane są statyczne, a cały opisany proces ma
+zadziałać najwyżej kilkukrotnie. W praktyce jednak dane mogą być
+streamowane, np. za pomocą **Apache Kafka**, co oznaczałoby wielokrotne wywołanie funkcji modelującej,
+czy zawierać błędy - z tego względu potencjalnie należałoby zwiększyć
+elastyczność rozwiązania, a także zautomatyzować je. Tu należy wspomnieć o 
+ograniczeniach użytych narzędzi - środowisko, w którym autor projektu czuł 
+się najpewniej (**R**) pod kątem **Apache Spark**'a wciąż jest niedoskonałe i w kontekście
+zaadresowanych problemów często nieoptymalne. Być może
+przyszłe zmiany w bibliotekach **R**'owych doprowadzi do znacznego uproszczenia i poprawienia 
+analogicznych projektów. W tym momencie jest to jednak zadanie nietrywialne.
+
+\newpage
+# Spis rysunków
+\listoffigures
+
+\newpage
+# Bibliografia
